@@ -1,0 +1,225 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600&display=swap');
+
+:host {
+  display: block;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #2d6cdf1f, transparent 40%),
+    radial-gradient(circle at 80% 10%, #f59e0b1f, transparent 35%),
+    linear-gradient(135deg, #0b1224 0%, #0f192f 45%, #0b1224 100%);
+  color: #e5ecf5;
+  font-family: 'Space Grotesk', 'Manrope', system-ui, -apple-system, sans-serif;
+  padding: 48px 24px 72px;
+  box-sizing: border-box;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 32px;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.headline h1 {
+  margin: 8px 0 6px;
+  font-size: 40px;
+  letter-spacing: -0.02em;
+}
+
+.headline .lede {
+  margin: 0;
+  color: #b7c4d6;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 11px;
+  color: #7bb8ff;
+  margin: 0;
+}
+
+.stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  background: #13223c;
+  color: #dbeafe;
+  padding: 10px 14px;
+  border: 1px solid #1f2e4d;
+  border-radius: 999px;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.stats .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(120deg, #60a5fa, #22d3ee);
+  box-shadow: 0 0 12px #22d3ee66;
+}
+
+.new-card {
+  background: #0f172a;
+  border: 1px solid #1f2e4d;
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 10px 35px #00000033;
+}
+
+.new-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 14px;
+}
+
+.new-card input {
+  background: #0b1224;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  color: #e5ecf5;
+  padding: 12px 14px;
+  outline: none;
+  font-size: 15px;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.new-card input:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px #60a5fa33;
+}
+
+.new-card button {
+  margin-top: 4px;
+  background: linear-gradient(135deg, #2563eb, #22d3ee);
+  border: none;
+  border-radius: 12px;
+  color: #0b1224;
+  font-weight: 700;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.new-card button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.new-card button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px #2563eb44;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 24px;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #94a3b8;
+  padding: 18px;
+  border: 1px dashed #1f2e4d;
+  border-radius: 12px;
+  background: #0f172a;
+}
+
+.card {
+  position: relative;
+  height: 180px;
+  perspective: 1100px;
+  cursor: pointer;
+}
+
+.card-inner {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.6s ease;
+  transform-style: preserve-3d;
+}
+
+.card.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid #1f2e4d;
+  backface-visibility: hidden;
+  background: #0f172a;
+  box-shadow: 0 14px 35px #0000002a;
+}
+
+.card-face.back {
+  background: linear-gradient(160deg, #0ea5e9, #2563eb);
+  color: #f8fafc;
+  transform: rotateY(180deg);
+}
+
+.tag {
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  background: #1f2e4d;
+  color: #cbd5e1;
+}
+
+.card-face.back .tag {
+  background: #0b1224;
+  color: #dbeafe;
+}
+
+.word {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.hint {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.card-face.back .hint {
+  color: #e2e8f0;
+}
+
+@media (max-width: 880px) {
+  :host {
+    padding: 32px 18px 64px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .word {
+    font-size: 18px;
+  }
+}
