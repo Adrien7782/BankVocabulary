@@ -1,11 +1,22 @@
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
+import { AuthService } from './auth.service';
 
 describe('App', () => {
+  const authStub = {
+    user: () => null,
+    loading: () => false,
+    verifying: () => false,
+    signIn: () => Promise.resolve(),
+    sendVerification: () => Promise.resolve(),
+    logout: () => Promise.resolve(),
+  } as unknown as AuthService;
+
   beforeEach(async () => {
     localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [{ provide: AuthService, useValue: authStub }],
     }).compileComponents();
   });
 
@@ -19,7 +30,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Flashcards');
+    expect(compiled.querySelector('h1')?.textContent).toContain('Connexion');
   });
 
   it('should add a new card', () => {

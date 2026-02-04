@@ -1,68 +1,373 @@
-<section class="page">
-  <header class="hero">
-    <div class="headline">
-      <p class="eyebrow">Banque de vocabulaire</p>
-      <h1>Flashcards FR → EN</h1>
-      <p class="lede">Ajoute des mots, clique sur une carte pour révéler la traduction.</p>
-      <div class="stats">
-        <span class="dot"></span>
-        <span>{{ totalCards() }} carte{{ totalCards() > 1 ? 's' : '' }}</span>
+@if (!isAuthenticated()) {
+  <div class="auth-screen">
+    <div class="auth-card">
+      <h1>Connexion</h1>
+      <p class="lede">Identifie-toi pour accéder à ta banque.</p>
+
+      @if (auth.loading()) {
+        <p class="muted">Chargement...</p>
+      }
+
+      <form (ngSubmit)="login()" class="auth-form" autocomplete="off">
+        <label>
+          Email
+          <input
+            type="email"
+            name="email"
+            [ngModel]="email()"
+            (ngModelChange)="email.set($event)"
+            required
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+          />
+        </label>
+        <label>
+          Mot de passe
+          <input
+            type="password"
+            name="password"
+            [ngModel]="password()"
+            (ngModelChange)="password.set($event)"
+            required
+            autocomplete="off"
+          />
+        </label>
+        <button type="submit">Se connecter</button>
+      </form>
+
+      @if (authError()) {
+        <p class="auth-error">{{ authError() }}</p>
+      }
+
+      @if (auth.user() && !auth.user()?.emailVerified && environment.requireEmailVerification) {
+        <div class="verify-block">
+          <p>Vérifie ton email puis recharge la page.</p>
+          <button type="button" (click)="sendVerification()" [disabled]="auth.verifying()">Renvoyer l'email</button>
+        </div>
+      }
+    </div>
+  </div>
+} @else {
+<div class="layout">
+  <nav class="sidebar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <p class="eyebrow">Vocab</p>
+        <strong>Bank</strong>
       </div>
     </div>
+    <button
+      class="nav-btn"
+      [class.active]="activeTab() === 'home'"
+      (click)="switchTab('home')"
+    >
+      Accueil
+    </button>
+    <button
+      class="nav-btn"
+      [class.active]="activeTab() === 'bank'"
+      (click)="switchTab('bank')"
+    >
+      Banque ({{ totalCards() }})
+    </button>
+    <button
+      class="nav-btn"
+      [class.active]="activeTab() === 'review'"
+      (click)="switchTab('review')"
+    >
+      Révision
+    </button>
+    <div class="sidebar-meta">
+      <div class="user-pill" *ngIf="isAuthenticated()">
+        <div class="avatar" [style.background]="avatarColor()">{{ avatarInitial() }}</div>
+      </div>
+      <button class="logout" type="button" (click)="logout()">Déconnexion</button>
+    </div>
+  </nav>
 
-    <form class="new-card" (ngSubmit)="addCard()" #cardForm="ngForm">
-      <label>
-        Mot en français
-        <input
-          name="front"
-          type="text"
-          placeholder="ex : découvert"
-          [(ngModel)]="form.front"
-          required
-        />
-      </label>
-      <label>
-        Traduction anglaise
-        <input
-          name="back"
-          type="text"
-          placeholder="ex : overdraft"
-          [(ngModel)]="form.back"
-          required
-        />
-      </label>
-      <button type="submit" [disabled]="cardForm.form.invalid">Ajouter à la banque</button>
-    </form>
-  </header>
+  <section class="page">
+    <ng-container [ngSwitch]="activeTab()">
+      <ng-container *ngSwitchCase="'home'">
+        <header class="hero single">
+          <div class="headline">
+            <p class="eyebrow">Accueil</p>
+            <h1>Dernières cartes & tests</h1>
+            <p class="lede">Un coup d’œil rapide sur ce que tu viens d’ajouter et tes révisions.</p>
+          </div>
+        </header>
 
-  <section class="grid" aria-label="Liste des flashcards">
-    @if (flashcards().length === 0) {
-      <p class="empty">Ajoute ton premier mot pour créer ta collection.</p>
-    } @else {
-      @for (card of flashcards(); track card.id) {
-        <article
-          class="card"
-          (click)="toggleCard(card.id)"
-          [class.flipped]="card.flipped"
-          role="button"
-          [attr.aria-pressed]="card.flipped"
-          tabindex="0"
-          (keyup.enter)="toggleCard(card.id)"
-        >
-          <div class="card-inner">
-            <div class="card-face front">
-              <div class="tag">FR</div>
-              <p class="word">{{ card.front }}</p>
-              <p class="hint">Clique pour traduire</p>
+        <div class="home-sections">
+          <section>
+            <div class="section-title">
+              <h2>Dernières cartes</h2>
+              <span class="muted">8 plus récentes</span>
             </div>
-            <div class="card-face back">
-              <div class="tag">EN</div>
-              <p class="word">{{ card.back }}</p>
-              <p class="hint">Clique pour revenir</p>
+            <div class="grid">
+              @for (card of flashcards().slice(0, 8); track card.id) {
+                <article class="card" role="presentation">
+                  <div class="card-inner">
+                    <div class="card-face front">
+                      <div class="tag">FR</div>
+                      <p class="word">{{ card.front }}</p>
+                    </div>
+                    <div class="card-face back">
+                      <div class="tag">EN</div>
+                      <p class="word">{{ card.back }}</p>
+                    </div>
+                  </div>
+                </article>
+              } @empty {
+                <p class="empty">Aucune carte pour l’instant.</p>
+              }
+            </div>
+          </section>
+
+          <section>
+            <div class="section-title">
+              <h2>Historique des tests</h2>
+              <span class="muted">4 derniers</span>
+            </div>
+            <div class="history-grid">
+              @for (test of history(); track test.id) {
+                <article class="history-card" (click)="openHistoryTest(test)" tabindex="0" (keyup.enter)="openHistoryTest(test)">
+                  <div class="history-header">
+                    <span class="pill small">Test #{{ test.id }}</span>
+                    <span class="muted">{{ test.size }} cartes</span>
+                  </div>
+                  <p class="score">{{ test.score }} / {{ test.size }}</p>
+                  <p class="date">{{ test.createdAt | date:'short' }}</p>
+                  <button class="link-btn" type="button">Voir le récap</button>
+                </article>
+              } @empty {
+                <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
+              }
+            </div>
+          </section>
+        </div>
+      </ng-container>
+
+      <ng-container *ngSwitchCase="'bank'">
+        <header class="hero">
+          <div class="headline">
+            <p class="eyebrow">Banque de vocabulaire</p>
+            <h1>Flashcards FR/ENG</h1>
+            <p class="lede">Ajoute des mots, clique sur une carte pour révéler la traduction.</p>
+            <div class="stats">
+              <span class="dot"></span>
+              <span>{{ totalCards() }} carte{{ totalCards() > 1 ? 's' : '' }}</span>
+            </div>
+            <div class="actions-bar">
+              <button
+                type="button"
+                class="shuffle-btn"
+                (click)="shuffleCards()"
+                [disabled]="flashcards().length === 0"
+              >
+                Mélanger
+              </button>
+              <button
+                type="button"
+                class="delete-toggle"
+                [class.active]="deleteMode()"
+                (click)="toggleDeleteMode()"
+              >
+                {{ deleteMode() ? 'Terminer suppression' : 'Supprimer cartes' }}
+              </button>
             </div>
           </div>
-        </article>
-      }
-    }
+
+          <form class="new-card" (ngSubmit)="addCard()" #cardForm="ngForm" autocomplete="off">
+            <label>
+              Mot en français
+              <input
+                name="front"
+                type="text"
+                placeholder="ex : découvert"
+                [(ngModel)]="form.front"
+                required
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+              />
+            </label>
+            <label>
+              Traduction anglaise
+              <input
+                name="back"
+                type="text"
+                placeholder="ex : overdraft"
+                [(ngModel)]="form.back"
+                required
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+              />
+            </label>
+            <button type="submit" [disabled]="cardForm.form.invalid">Ajouter à la banque</button>
+          </form>
+        </header>
+
+        <section
+          class="grid"
+          aria-label="Liste des flashcards"
+          [class.delete-mode]="deleteMode()"
+          [class.shuffling]="shuffleWave()"
+        >
+          @if (flashcards().length === 0) {
+            <p class="empty">Ajoute ton premier mot pour créer ta collection.</p>
+          } @else {
+            @for (card of flashcards(); track card.id) {
+              <article
+                class="card"
+                #cardEl
+                [class.new-card]="card.id === lastAddedId()"
+                (click)="toggleCard(card.id)"
+                [class.flipped]="card.flipped"
+                role="button"
+                [attr.aria-pressed]="card.flipped"
+                tabindex="0"
+                (keyup.enter)="toggleCard(card.id)"
+              >
+                @if (deleteMode()) {
+                  <button
+                    class="delete-badge"
+                    type="button"
+                    (click)="deleteCard(card.id); $event.stopPropagation()"
+                    aria-label="Supprimer cette carte"
+                  >
+                    &times;
+                  </button>
+                }
+                <div class="card-inner">
+                  <div class="card-face front">
+                    <div class="tag">FR</div>
+                    <p class="word">{{ card.front }}</p>
+                  </div>
+                  <div class="card-face back">
+                    <div class="tag">EN</div>
+                    <p class="word">{{ card.back }}</p>
+                  </div>
+                </div>
+              </article>
+            }
+          }
+        </section>
+      </ng-container>
+
+      <ng-container *ngSwitchCase="'review'">
+        <section class="hero">
+          <div class="headline">
+            <p class="eyebrow">Session de révision</p>
+            <h1>Teste-toi</h1>
+            <p class="lede">Choisis le nombre de cartes, réponds, puis valide pour voir la solution.</p>
+            <div class="stats">
+              <span class="dot"></span>
+              <span>Score : {{ score() }} / {{ reviewCards().length || testSize() }}</span>
+            </div>
+          </div>
+
+          <form class="new-card" (ngSubmit)="startTest()" autocomplete="off">
+            <label>
+              Nombre de cartes
+              <input
+                name="size"
+                type="number"
+                min="1"
+                [max]="totalCards() || 1"
+                [ngModel]="testSize()"
+                (ngModelChange)="testSize.set(+($event || 0))"
+                placeholder="5"
+                required
+                autocomplete="off"
+                inputmode="numeric"
+              />
+            </label>
+            <button type="submit">Lancer le test</button>
+          </form>
+        </section>
+
+        @if (reviewCards().length === 0 && !testFinished()) {
+          <p class="empty">Lance un test pour commencer.</p>
+        }
+
+        @if (testFinished() && reviewCards().length > 0 && !selectedHistory()) {
+          <div class="result">
+            <p>Terminé ! Score : {{ score() }} / {{ reviewCards().length }}</p>
+            <button class="nav-btn" (click)="startTest()">Relancer</button>
+          </div>
+        }
+
+        @if (selectedHistory(); as recap) {
+          <div class="result">
+            <p>Récap test #{{ recap.id }} — {{ recap.score }} / {{ recap.size }}</p>
+            <button class="nav-btn" (click)="startTest(recap.cards)">Relancer ce test</button>
+          </div>
+
+          <div class="grid recap-grid">
+            @for (card of recap.cards; track card.id) {
+              <article class="card recap">
+                <div class="card-inner">
+                  <div class="card-face front">
+                    <div class="tag">FR</div>
+                    <p class="word">{{ card.front }}</p>
+                  </div>
+                  <div class="card-face back">
+                    <div class="tag">EN</div>
+                    <p class="word">{{ card.back }}</p>
+                  </div>
+                </div>
+              </article>
+            }
+          </div>
+        }
+
+        @if (!selectedHistory() && currentCard(); as card) {
+          <div class="review-card" [class.revealed]="cardRevealed()">
+            <div class="card-inner">
+              <div class="card-face front">
+                <div class="tag">{{ showFront() ? 'Question' : 'Réponse attendue' }}</div>
+                <p class="word">{{ showFront() ? card.front : card.back }}</p>
+              </div>
+              <div class="card-face back">
+                <div class="tag">{{ showFront() ? 'Réponse attendue' : 'Question' }}</div>
+                <p class="word">{{ showFront() ? card.back : card.front }}</p>
+                @if (cardRevealed()) {
+                  <p class="hint">
+                    {{ lastCorrect() ? 'Bonne réponse !' : 'Raté' }}
+                  </p>
+                }
+              </div>
+            </div>
+          </div>
+
+          <form class="answer" (ngSubmit)="submitAnswer()" autocomplete="off">
+            <label>
+              Ta réponse
+              <input
+                name="answer"
+                type="text"
+                placeholder="Écris la traduction"
+                [disabled]="cardRevealed()"
+                [value]="answer()"
+                (input)="answer.set($any($event.target).value)"
+                required
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+              />
+            </label>
+            <div class="actions">
+              <button type="submit" [disabled]="cardRevealed()">Valider</button>
+              <button type="button" [disabled]="!cardRevealed()" (click)="nextCard()">
+                Carte suivante
+              </button>
+            </div>
+          </form>
+        }
+      </ng-container>
+    </ng-container>
   </section>
-</section>
+</div>
+}
