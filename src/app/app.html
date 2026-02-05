@@ -39,15 +39,27 @@
       @if (authError()) {
         <p class="auth-error">{{ authError() }}</p>
       }
-
-      @if (auth.user() && !auth.user()?.emailVerified && environment.requireEmailVerification) {
-        <div class="verify-block">
-          <p>Vérifie ton email puis recharge la page.</p>
-          <button type="button" (click)="sendVerification()" [disabled]="auth.verifying()">Renvoyer l'email</button>
-        </div>
-      }
     </div>
+
+    @if (auth.user() && !auth.user()?.emailVerified && environment.requireEmailVerification) {
+      <div class="verify-card below-auth">
+        <div class="verify-header">
+          <div>
+            <p class="verify-title">Vérifie ton email</p>
+            <p class="verify-sub">Un lien t'attend dans ta boîte. Clique puis recharge la page.</p>
+          </div>
+          <div class="chip warning">Email non vérifié</div>
+        </div>
+        <div class="verify-actions">
+          <button class="nav-btn" type="button" (click)="sendVerification()" [disabled]="auth.verifying()">
+            Renvoyer le mail
+          </button>
+          <span class="muted small">Pense à vérifier tes spams.</span>
+        </div>
+      </div>
+    }
   </div>
+
 } @else {
 <div class="layout">
   <nav class="sidebar">
@@ -127,24 +139,35 @@
 
           <section>
             <div class="section-title">
-              <h2>Historique des tests</h2>
-              <span class="muted">Derniers tests</span>
+              <h2>Dernier Test</h2>
             </div>
-            <div class="history-grid with-toggle">
-              @for (test of history().slice(0, showAllHistory ? 12 : 4); track test.id) {
-                <article class="history-card" (click)="openHistoryTest(test)" tabindex="0" (keyup.enter)="openHistoryTest(test)">
-                  <div class="history-header">
+            @if (history().length === 0) {
+              <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
+            } @else {
+              @if (history()[0]; as test) {
+                <article
+                  class="history-wide"
+                  [ngClass]="{
+                    correct: test.score === test.size,
+                    wrong: test.score !== test.size
+                  }"
+                  (click)="openLatestInReview(test)"
+                  tabindex="0"
+                  (keyup.enter)="openLatestInReview(test)"
+                >
+                  <div class="history-wide__header">
                     <span class="pill small">Test #{{ test.id }}</span>
-                    <span class="muted">{{ test.size }} cartes</span>
+                    <span class="muted">{{ test.createdAt | date:'short' }}</span>
                   </div>
-                  <p class="score">{{ test.score }} / {{ test.size }}</p>
-                  <p class="date">{{ test.createdAt | date:'short' }}</p>
-                  <button class="link-btn" type="button">Voir le récap</button>
+                  <div class="history-wide__body">
+                    <div class="history-wide__score">
+                      <p class="word">Score : {{ test.score }} / {{ test.size }}</p>
+                    </div>
+                    <div class="history-wide__cta">Voir le récap complet</div>
+                  </div>
                 </article>
-              } @empty {
-                <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
               }
-          </div>
+            }
             <!-- <div class="grid recap-grid">
               @for (test of history().slice(0,4); track test.id) {
                 <article
@@ -325,31 +348,90 @@
 
         @if (reviewCards().length === 0 && !testFinished()) {
           <p class="empty">Lance un test pour t'entraîner.</p>
-          @if (history().length > 0) {
-            <div class="history-grid with-toggle">
-              @for (test of history().slice(0, showAllHistory ? 12 : 4); track test.id) {
-                <article class="history-card" (click)="openHistoryTest(test)" tabindex="0" (keyup.enter)="openHistoryTest(test)">
-                  <div class="history-header">
+          <div class="section-title">
+            <h2>Derniers Tests</h2>
+            <button class="danger-btn" type="button" (click)="clearHistory()">Supprimer historique</button>
+          </div>
+          <div class="history-stack">
+            @for (test of history().slice(0,12); track test.id) {
+              <!-- <article
+                  class="history-wide"
+                  [ngClass]="{
+                    correct: test.score === test.size,
+                    wrong: test.score !== test.size
+                  }"
+                  (click)="openLatestInReview(test)"
+                  tabindex="0"
+                  (keyup.enter)="openLatestInReview(test)"
+                >
+                  <div class="history-wide__header">
                     <span class="pill small">Test #{{ test.id }}</span>
-                    <span class="muted">{{ test.size }} cartes</span>
+                    <span class="muted">{{ test.createdAt | date:'short' }}</span>
                   </div>
-                  <p class="score">{{ test.score }} / {{ test.size }}</p>
-                  <p class="date">{{ test.createdAt | date:'short' }}</p>
-                  <button class="link-btn" type="button">Voir le récap</button>
-                </article>
-              }
-              @if (history().length > 4) {
-                <div class="more-btn-wrapper">
-                  <button class="nav-btn more-btn" type="button" (click)="showAllHistory = !showAllHistory">
-                    {{ showAllHistory ? '▴' : '▾' }}
-                  </button>
+                  <div class="history-wide__body">
+                    <div class="history-wide__score">
+                      <p class="word">Score : {{ test.score }} / {{ test.size }}</p>
+                    </div>
+                    <div class="history-wide__cta">Voir le récap complet</div>
+                  </div>
+                </article> -->
+              <article
+                class="history-wide"
+                (click)="toggleHistoryView(test)"
+                tabindex="0"
+                (keyup.enter)="toggleHistoryView(test)"
+                [ngClass]="{ correct: test.score === test.size, wrong: test.score !== test.size }"
+              >
+                <div class="history-wide__header">
+                  <span class="pill small">Test #{{ test.id }}</span>
+                  <span class="muted">{{ test.createdAt | date:'short' }}</span>
                 </div>
-              }
-            </div>
-          }
+                <div class="history-wide__body">
+                  <div class="history-wide__score">
+                    <p class="word">Score : {{ test.score }} / {{ test.size }}</p>
+                  </div>
+                  <div class="history-wide__cta">
+                    Voir le récap complet
+                    <span class="chevron">{{ openHistoryId() === test.id.toString() ? '▴' : '▾' }}</span>
+                  </div>
+                </div>
+                @if (openHistoryId() === test.id.toString()) {
+                  <div class="grid recap-grid">
+                    @for (card of test.cards; track card.id) {
+                      <article
+                        class="card recap"
+                        [ngClass]="{
+                          correct: test.answers?.[card.id] === true,
+                          wrong: test.answers?.[card.id] === false
+                        }"
+                        [class.flipped]="recapFlips()[card.id]"
+                        (click)="$event.stopPropagation(); toggleRecapCard(card.id)"
+                      >
+                        <div class="card-inner">
+                          <div class="card-face front">
+                            <div class="tag">Question</div>
+                            <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
+                          </div>
+                          <div class="card-face back">
+                            <div class="tag">Réponse</div>
+                            <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
+                          </div>
+                        </div>
+                      </article>
+                    }
+                  </div>
+                }
+              </article>
+            } @empty {
+              <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
+            }
+          </div>
         }
 
         @if (testFinished() && reviewCards().length > 0 && !selectedHistory()) {
+          <div class="section-title">
+            <h2>Résultats</h2>
+          </div>
           <div class="result">
             <p>Score : {{ score() }} / {{ reviewCards().length }}</p>
             <button class="nav-btn" (click)="startTest()">Relancer</button>
@@ -385,27 +467,64 @@
               </div>
             }
           </div>
-          <div class="history-grid with-toggle">
-              @for (test of history().slice(0, showAllHistory ? 12 : 4); track test.id) {
-                <article class="history-card" (click)="openHistoryTest(test)" tabindex="0" (keyup.enter)="openHistoryTest(test)">
-                  <div class="history-header">
-                    <span class="pill small">Test #{{ test.id }}</span>
-                    <span class="muted">{{ test.size }} cartes</span>
-                  </div>
-                  <p class="score">{{ test.score }} / {{ test.size }}</p>
-                  <p class="date">{{ test.createdAt | date:'short' }}</p>
-                  <button class="link-btn" type="button">Voir le récap</button>
-                </article>
-              } @empty {
-                <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
-              }
-              @if (history().length > 4) {
-                <div class="more-btn-wrapper">
-                  <button class="nav-btn more-btn" type="button" (click)="showAllHistory = !showAllHistory">
-                    {{ showAllHistory ? '▴' : '▾' }}
-                  </button>
+
+
+          <div class="section-title">
+            <h2>Derniers Tests</h2>
+            <button class="danger-btn" type="button" (click)="clearHistory()">Supprimer historique</button>
+            </div>
+          <div class="history-stack">
+            @for (test of history().slice(0,12); track test.id) {
+              <article
+                class="history-wide"
+                (click)="toggleHistoryView(test)"
+                tabindex="0"
+                (keyup.enter)="toggleHistoryView(test)"
+                [ngClass]="{ correct: test.score === test.size, wrong: test.score !== test.size }"
+              >
+                <div class="history-wide__header">
+                  <span class="pill small">Test #{{ test.id }}</span>
+                  <span class="muted">{{ test.createdAt | date:'short' }}</span>
                 </div>
-              }
+                <div class="history-wide__body">
+                  <div class="history-wide__score">
+                    <p class="word">Score : {{ test.score }} / {{ test.size }}</p>
+                  </div>
+                  <div class="history-wide__cta">
+                    Voir le récap complet
+                    <span class="chevron">{{ openHistoryId() === test.id.toString() ? '▴' : '▾' }}</span>
+                  </div>
+                </div>
+                @if (openHistoryId() === test.id.toString()) {
+                  <div class="grid recap-grid">
+                    @for (card of test.cards; track card.id) {
+                      <article
+                        class="card recap"
+                        [ngClass]="{
+                          correct: test.answers?.[card.id] === true,
+                          wrong: test.answers?.[card.id] === false
+                        }"
+                        [class.flipped]="recapFlips()[card.id]"
+                        (click)="$event.stopPropagation(); toggleRecapCard(card.id)"
+                      >
+                        <div class="card-inner">
+                          <div class="card-face front">
+                            <div class="tag">Question</div>
+                            <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
+                          </div>
+                          <div class="card-face back">
+                            <div class="tag">Réponse</div>
+                            <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
+                          </div>
+                        </div>
+                      </article>
+                    }
+                  </div>
+                }
+              </article>
+            } @empty {
+              <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
+            }
           </div>
           
         }

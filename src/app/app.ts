@@ -31,6 +31,7 @@ type TestResult = {
   size: number;
   score: number;
   cards: Flashcard[];
+  answers?: Record<string, boolean | null>;
 };
 
 @Component({
@@ -71,6 +72,7 @@ export class App {
   readonly recapFlips = signal<Record<string, boolean>>({});
   showAllHistory = false;
   showAllRecap = false;
+  readonly openHistoryId = signal<string | null>(null);
   readonly email = signal('');
   readonly password = signal('');
   readonly authError = signal<string | null>(null);
@@ -349,6 +351,17 @@ export class App {
     this.recapFlips.update((m) => ({ ...m, [id]: !m[id] }));
   }
 
+  toggleHistoryView(test: TestResult): void {
+    const id = String(test.id);
+    if (this.openHistoryId() === id) {
+      this.openHistoryId.set(null);
+      this.recapFlips.set({});
+      return;
+    }
+    this.recapFlips.set({});
+    this.openHistoryId.set(id);
+  }
+
   openHistoryTest(test: TestResult): void {
     this.activeTab.set('review');
     this.selectedHistory.set(test);
@@ -360,6 +373,31 @@ export class App {
     this.cardRevealed.set(false);
     this.lastCorrect.set(null);
     this.showFront.set(true);
+    this.answers.set(test.answers ?? {});
+  }
+
+  clearHistory(): void {
+    this.history.set([]);
+    this.selectedHistory.set(null);
+    this.reviewCards.set([]);
+    this.testFinished.set(false);
+    this.currentIndex.set(0);
+    this.score.set(0);
+    this.openHistoryId.set(null);
+    this.recapFlips.set({});
+    this.answers.set({});
+    this.nextTestId = 1;
+    localStorage.removeItem(this.historyKey());
+  }
+
+  openLatestInReview(test: TestResult): void {
+    this.switchTab('review');
+    this.reviewCards.set([]);
+    this.testFinished.set(false);
+    this.selectedHistory.set(null);
+    this.recapFlips.set({});
+    this.answers.set(test.answers ?? {});
+    this.openHistoryId.set(String(test.id));
   }
 
   currentCard = computed(() => this.reviewCards()[this.currentIndex()] ?? null);
@@ -370,12 +408,14 @@ export class App {
     const size = this.reviewCards().length;
     if (size === 0) return;
     const savedCards = this.reviewCards().map((c) => ({ ...c, flipped: false }));
+    const savedAnswers = { ...this.answers() };
     const result: TestResult = {
       id: this.nextTestId++,
       createdAt: Date.now(),
       size,
       score: this.score(),
       cards: savedCards,
+      answers: savedAnswers,
     };
     this.history.update((items) => [result, ...items].slice(0, 12));
   }
@@ -393,7 +433,7 @@ export class App {
       try {
         const parsed = JSON.parse(hist) as TestResult[];
         if (Array.isArray(parsed)) {
-          this.history.set(parsed.slice(0, 4));
+          this.history.set(parsed.slice(0, 12));
           const maxId = parsed.reduce((m, t) => Math.max(m, t.id ?? 0), 0);
           this.nextTestId = (maxId || 0) + 1;
         }
