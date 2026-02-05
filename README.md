@@ -57,3 +57,20 @@ Angular CLI does not come with an end-to-end testing framework by default. You c
 ## Additional Resources
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+
+## Déploiement (GitHub Pages)
+
+Pré-requis : `environment.ts` et `environment.development.ts` remplis localement (non commités) avec la clé API Firebase restreinte.
+
+```bash
+# Build prod avec base href GitHub Pages
+ng build --configuration production --base-href /BankVocabulary/
+
+# Copier l’index en 404 pour le routage SPA
+Copy-Item dist/BankVocabulary/browser/index.html dist/BankVocabulary/browser/404.html -Force
+
+# Publier sur la branche gh-pages
+npx angular-cli-ghpages --dir=dist/BankVocabulary/browser --repo=https://github.com/Adrien7782/BankVocabulary.git
+```
+
+Après déploiement, l’application est disponible sur `https://adrien7782.github.io/BankVocabulary/`.
