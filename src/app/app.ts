@@ -67,6 +67,10 @@ export class App {
   readonly deleteMode = signal(false);
   readonly lastAddedId = signal<string | null>(null);
   readonly shuffleWave = signal(false);
+  readonly answers = signal<Record<string, boolean | null>>({});
+  readonly recapFlips = signal<Record<string, boolean>>({});
+  showAllHistory = false;
+  showAllRecap = false;
   readonly email = signal('');
   readonly password = signal('');
   readonly authError = signal<string | null>(null);
@@ -116,6 +120,14 @@ export class App {
     for (const ch of mail) hash = (hash * 31 + ch.charCodeAt(0)) % 9973;
     return colors[hash % colors.length];
   });
+
+  fontSize(text: string): string {
+    const len = (text ?? '').length;
+    if (len <= 25) return '20px';
+    if (len <= 60) return '18px';
+    if (len <= 120) return '16px';
+    return '14px';
+  }
 
   async login(): Promise<void> {
     this.authError.set(null);
@@ -181,6 +193,46 @@ export class App {
     deleteDoc(doc(this.db, 'users', this.auth.user()!.uid, 'cards', id)).catch(() => {});
   }
 
+  flipAllCards(): void {
+    if (!this.db || !this.auth.user()) return;
+    const target = !this.flashcards().every((c) => c.flipped);
+    const uid = this.auth.user()!.uid;
+    const updates = this.flashcards().map((c) =>
+      updateDoc(doc(this.db!, 'users', uid, 'cards', c.id), { flipped: target }).catch(() => {})
+    );
+    Promise.all(updates).catch(() => {});
+  }
+
+  async addSampleCards(): Promise<void> {
+    if (!this.db || !this.auth.user()) return;
+    const uid = this.auth.user()!.uid;
+    const samples: Array<{ front: string; back: string }> = [
+      { front: 'Machine learning', back: 'Apprentissage automatique' },
+      { front: 'Liquidity', back: 'Liquidité' },
+      { front: 'Churn', back: 'Attrition client' },
+      { front: 'Gross margin', back: 'Marge brute' },
+      { front: 'Tenir compte de', back: 'To take into account' },
+      { front: 'Key takeaway', back: 'Point clé' },
+      { front: 'Deadline', back: 'Date limite' },
+      { front: 'Cash flow', back: 'Flux de trésorerie' },
+      { front: 'Hypothèse', back: 'Assumption' },
+      { front: 'Livrable', back: 'Deliverable' },
+    ];
+    try {
+      await Promise.all(
+        samples.map((c) =>
+          addDoc(collection(this.db!, 'users', uid, 'cards'), {
+            ...c,
+            flipped: false,
+            createdAt: Date.now(),
+          })
+        )
+      );
+    } catch (e: any) {
+      this.authError.set(e?.message ?? 'Erreur lors de l’ajout des exemples');
+    }
+  }
+
   shuffleCards(): void {
     this.flashcards.update((cards) => {
       const arr = [...cards];
@@ -224,24 +276,35 @@ export class App {
 
   startTest(fromCards?: Flashcard[]): void {
     this.selectedHistory.set(null);
-    const pool = fromCards ? [...fromCards] : [...this.flashcards()];
-    if (pool.length === 0) {
+    const source = fromCards ? [...fromCards] : [...this.flashcards()];
+    // dédoublonne par contenu (recto/verso) pour éviter de revoir la même Q/R
+    const normalize = (t: string) => (t ?? '').trim().toLowerCase();
+    const uniquePool = Array.from(
+      source.reduce((map, card) => {
+        const key = `${normalize(card.front)}|${normalize(card.back)}`;
+        if (!map.has(key)) map.set(key, card);
+        return map;
+      }, new Map<string, Flashcard>()).values()
+    );
+    if (uniquePool.length === 0) {
       this.testFinished.set(true);
       this.reviewCards.set([]);
       return;
     }
 
-    const size = Math.max(1, Math.min(this.testSize(), pool.length));
+    const size = Math.max(1, Math.min(this.testSize(), uniquePool.length));
     const shuffled = fromCards
-      ? pool.slice(0, size)
-      : pool.sort(() => Math.random() - 0.5).slice(0, size);
+      ? uniquePool.slice(0, size)
+      : uniquePool.sort(() => Math.random() - 0.5).slice(0, size);
 
     this.reviewCards.set(shuffled);
     this.currentIndex.set(0);
     this.score.set(0);
     this.testFinished.set(false);
     this.testSize.set(size);
-    this.prepareCard();
+    this.answers.set({});
+    this.recapFlips.set({});
+    this.prepareCard(true);
   }
 
   submitAnswer(): void {
@@ -256,18 +319,34 @@ export class App {
       this.score.update((s) => s + 1);
     }
 
+    this.answers.update((map) => ({ ...map, [card.id]: isCorrect }));
     this.lastCorrect.set(isCorrect);
     this.cardRevealed.set(true);
   }
 
   nextCard(): void {
+    if (this.testFinished()) return;
     const next = this.currentIndex() + 1;
-    if (next >= this.reviewCards().length) {
-      this.finalizeTest();
-      return;
-    }
-    this.currentIndex.set(next);
-    this.prepareCard();
+    const hasNext = next < this.reviewCards().length;
+
+    // flip back before changing content
+    this.cardRevealed.set(false);
+    this.showFront.set(true);
+    this.answer.set('');
+    this.lastCorrect.set(null);
+
+    setTimeout(() => {
+      if (!hasNext) {
+        this.finalizeTest();
+        return;
+      }
+      this.currentIndex.set(next);
+      this.prepareCard(true);
+    }, 250); // match CSS transition (~0.6s) but short enough for UX
+  }
+
+  toggleRecapCard(id: string): void {
+    this.recapFlips.update((m) => ({ ...m, [id]: !m[id] }));
   }
 
   openHistoryTest(test: TestResult): void {
@@ -298,11 +377,11 @@ export class App {
       score: this.score(),
       cards: savedCards,
     };
-    this.history.update((items) => [result, ...items].slice(0, 4));
+    this.history.update((items) => [result, ...items].slice(0, 12));
   }
 
-  private prepareCard(): void {
-    this.showFront.set(Math.random() > 0.5);
+  private prepareCard(forceQuestionSide = false): void {
+    this.showFront.set(forceQuestionSide ? true : Math.random() > 0.5);
     this.answer.set('');
     this.cardRevealed.set(false);
     this.lastCorrect.set(null);

@@ -57,6 +57,9 @@
         <p class="eyebrow">Vocab</p>
         <strong>Bank</strong>
       </div>
+      <div class="brand-avatar" *ngIf="isAuthenticated()">
+        <div class="avatar" [style.background]="avatarColor()">{{ avatarInitial() }}</div>
+      </div>
     </div>
     <button
       class="nav-btn"
@@ -80,9 +83,7 @@
       Révision
     </button>
     <div class="sidebar-meta">
-      <div class="user-pill" *ngIf="isAuthenticated()">
-        <div class="avatar" [style.background]="avatarColor()">{{ avatarInitial() }}</div>
-      </div>
+
       <button class="logout" type="button" (click)="logout()">Déconnexion</button>
     </div>
   </nav>
@@ -109,11 +110,11 @@
                 <article class="card" role="presentation">
                   <div class="card-inner">
                     <div class="card-face front">
-                      <div class="tag">FR</div>
+                      <div class="tag">Recto</div>
                       <p class="word">{{ card.front }}</p>
                     </div>
                     <div class="card-face back">
-                      <div class="tag">EN</div>
+                      <div class="tag">Verso</div>
                       <p class="word">{{ card.back }}</p>
                     </div>
                   </div>
@@ -127,10 +128,10 @@
           <section>
             <div class="section-title">
               <h2>Historique des tests</h2>
-              <span class="muted">4 derniers</span>
+              <span class="muted">Derniers tests</span>
             </div>
-            <div class="history-grid">
-              @for (test of history(); track test.id) {
+            <div class="history-grid with-toggle">
+              @for (test of history().slice(0, showAllHistory ? 12 : 4); track test.id) {
                 <article class="history-card" (click)="openHistoryTest(test)" tabindex="0" (keyup.enter)="openHistoryTest(test)">
                   <div class="history-header">
                     <span class="pill small">Test #{{ test.id }}</span>
@@ -143,7 +144,35 @@
               } @empty {
                 <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
               }
-            </div>
+          </div>
+            <!-- <div class="grid recap-grid">
+              @for (test of history().slice(0,4); track test.id) {
+                <article
+                  class="card recap"
+                  [ngClass]="{
+                    correct: test.score === test.size,
+                    wrong: test.score !== test.size
+                  }"
+                  [class.flipped]="false"
+                  (click)="openHistoryTest(test)"
+                  tabindex="0"
+                  (keyup.enter)="openHistoryTest(test)"
+                >
+                  <div class="card-inner">
+                    <div class="card-face front">
+                      <div class="tag">Test #{{ test.id }}</div>
+                      <p class="word">Score : {{ test.score }} / {{ test.size }}</p>
+                    </div>
+                    <div class="card-face back">
+                      <div class="tag">Réponses</div>
+                      <p class="word">Clique pour voir le récap complet</p>
+                    </div>
+                  </div>
+                </article>
+              } @empty {
+                <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
+              }
+            </div> -->
           </section>
         </div>
       </ng-container>
@@ -151,9 +180,9 @@
       <ng-container *ngSwitchCase="'bank'">
         <header class="hero">
           <div class="headline">
-            <p class="eyebrow">Banque de vocabulaire</p>
-            <h1>Flashcards FR/ENG</h1>
-            <p class="lede">Ajoute des mots, clique sur une carte pour révéler la traduction.</p>
+            <p class="eyebrow">Banque de cartes</p>
+            <h1>Flashcards</h1>
+            <p class="lede">Ajoute des mots, évènements, question... , clique sur une carte pour révéler la réponse.</p>
             <div class="stats">
               <span class="dot"></span>
               <span>{{ totalCards() }} carte{{ totalCards() > 1 ? 's' : '' }}</span>
@@ -169,6 +198,14 @@
               </button>
               <button
                 type="button"
+                class="shuffle-btn"
+                (click)="flipAllCards()"
+                [disabled]="flashcards().length === 0"
+              >
+                Tout retourner
+              </button>
+              <button
+                type="button"
                 class="delete-toggle"
                 [class.active]="deleteMode()"
                 (click)="toggleDeleteMode()"
@@ -180,11 +217,10 @@
 
           <form class="new-card" (ngSubmit)="addCard()" #cardForm="ngForm" autocomplete="off">
             <label>
-              Mot en français
+              recto
               <input
                 name="front"
                 type="text"
-                placeholder="ex : découvert"
                 [(ngModel)]="form.front"
                 required
                 autocomplete="off"
@@ -193,11 +229,10 @@
               />
             </label>
             <label>
-              Traduction anglaise
+              verso
               <input
                 name="back"
                 type="text"
-                placeholder="ex : overdraft"
                 [(ngModel)]="form.back"
                 required
                 autocomplete="off"
@@ -241,13 +276,13 @@
                   </button>
                 }
                 <div class="card-inner">
-                  <div class="card-face front">
-                    <div class="tag">FR</div>
-                    <p class="word">{{ card.front }}</p>
+                 <div class="card-face front">
+                    <div class="tag">Recto</div>
+                    <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
                   </div>
                   <div class="card-face back">
-                    <div class="tag">EN</div>
-                    <p class="word">{{ card.back }}</p>
+                    <div class="tag">Verso</div>
+                    <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
                   </div>
                 </div>
               </article>
@@ -284,55 +319,150 @@
                 inputmode="numeric"
               />
             </label>
-            <button type="submit">Lancer le test</button>
+            <button type="submit">Nouveau test</button>
           </form>
         </section>
 
         @if (reviewCards().length === 0 && !testFinished()) {
-          <p class="empty">Lance un test pour commencer.</p>
+          <p class="empty">Lance un test pour t'entraîner.</p>
+          @if (history().length > 0) {
+            <div class="history-grid with-toggle">
+              @for (test of history().slice(0, showAllHistory ? 12 : 4); track test.id) {
+                <article class="history-card" (click)="openHistoryTest(test)" tabindex="0" (keyup.enter)="openHistoryTest(test)">
+                  <div class="history-header">
+                    <span class="pill small">Test #{{ test.id }}</span>
+                    <span class="muted">{{ test.size }} cartes</span>
+                  </div>
+                  <p class="score">{{ test.score }} / {{ test.size }}</p>
+                  <p class="date">{{ test.createdAt | date:'short' }}</p>
+                  <button class="link-btn" type="button">Voir le récap</button>
+                </article>
+              }
+              @if (history().length > 4) {
+                <div class="more-btn-wrapper">
+                  <button class="nav-btn more-btn" type="button" (click)="showAllHistory = !showAllHistory">
+                    {{ showAllHistory ? '▴' : '▾' }}
+                  </button>
+                </div>
+              }
+            </div>
+          }
         }
 
         @if (testFinished() && reviewCards().length > 0 && !selectedHistory()) {
           <div class="result">
-            <p>Terminé ! Score : {{ score() }} / {{ reviewCards().length }}</p>
+            <p>Score : {{ score() }} / {{ reviewCards().length }}</p>
             <button class="nav-btn" (click)="startTest()">Relancer</button>
+            <div class="grid recap-grid">
+            @for (card of reviewCards().slice(0, showAllRecap ? reviewCards().length : 8); track card.id) {
+              <article
+                class="card recap"
+                [ngClass]="{
+                  correct: answers()[card.id] === true,
+                    wrong: answers()[card.id] === false
+                  }"
+                  [class.flipped]="recapFlips()[card.id]"
+                  (click)="toggleRecapCard(card.id)"
+                >
+                  <div class="card-inner">
+                    <div class="card-face front">
+                      <div class="tag">Question</div>
+                      <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
+                    </div>
+                    <div class="card-face back">
+                      <div class="tag">Réponse</div>
+                      <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
+                    </div>
+                  </div>
+                </article>
+              }
+            </div>
+            @if (reviewCards().length > 8) {
+              <div class="more-btn-wrapper">
+                <button class="nav-btn more-btn" type="button" (click)="showAllRecap = !showAllRecap">
+                  {{ showAllRecap ? '▴' : '▾' }}
+                </button>
+              </div>
+            }
           </div>
+          <div class="history-grid with-toggle">
+              @for (test of history().slice(0, showAllHistory ? 12 : 4); track test.id) {
+                <article class="history-card" (click)="openHistoryTest(test)" tabindex="0" (keyup.enter)="openHistoryTest(test)">
+                  <div class="history-header">
+                    <span class="pill small">Test #{{ test.id }}</span>
+                    <span class="muted">{{ test.size }} cartes</span>
+                  </div>
+                  <p class="score">{{ test.score }} / {{ test.size }}</p>
+                  <p class="date">{{ test.createdAt | date:'short' }}</p>
+                  <button class="link-btn" type="button">Voir le récap</button>
+                </article>
+              } @empty {
+                <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
+              }
+              @if (history().length > 4) {
+                <div class="more-btn-wrapper">
+                  <button class="nav-btn more-btn" type="button" (click)="showAllHistory = !showAllHistory">
+                    {{ showAllHistory ? '▴' : '▾' }}
+                  </button>
+                </div>
+              }
+          </div>
+          
         }
 
         @if (selectedHistory(); as recap) {
           <div class="result">
             <p>Récap test #{{ recap.id }} — {{ recap.score }} / {{ recap.size }}</p>
+            <p>Score : {{ recap.score }} / {{ recap.size }}</p>
             <button class="nav-btn" (click)="startTest(recap.cards)">Relancer ce test</button>
-          </div>
 
-          <div class="grid recap-grid">
-            @for (card of recap.cards; track card.id) {
-              <article class="card recap">
-                <div class="card-inner">
-                  <div class="card-face front">
-                    <div class="tag">FR</div>
-                    <p class="word">{{ card.front }}</p>
+                        <div class="grid recap-grid">
+            @for (card of reviewCards().slice(0, showAllRecap ? reviewCards().length : 8); track card.id) {
+              <article
+                class="card recap"
+                [ngClass]="{
+                  correct: answers()[card.id] === true,
+                    wrong: answers()[card.id] === false
+                  }"
+                  [class.flipped]="recapFlips()[card.id]"
+                  (click)="toggleRecapCard(card.id)"
+                >
+                  <div class="card-inner">
+                    <div class="card-face front">
+                      <div class="tag">Question</div>
+                      <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
+                    </div>
+                    <div class="card-face back">
+                      <div class="tag">Réponse</div>
+                      <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
+                    </div>
                   </div>
-                  <div class="card-face back">
-                    <div class="tag">EN</div>
-                    <p class="word">{{ card.back }}</p>
-                  </div>
-                </div>
-              </article>
-            }
+                </article>
+              }
+            </div>
           </div>
         }
 
-        @if (!selectedHistory() && currentCard(); as card) {
+        @if (!selectedHistory() && !testFinished() && currentCard(); as card) {
           <div class="review-card" [class.revealed]="cardRevealed()">
             <div class="card-inner">
               <div class="card-face front">
-                <div class="tag">{{ showFront() ? 'Question' : 'Réponse attendue' }}</div>
-                <p class="word">{{ showFront() ? card.front : card.back }}</p>
+                <div class="tag">Carte {{ currentIndex() + 1 }}</div>
+                <p
+                  class="word"
+                  [style.font-size]="fontSize(showFront() ? card.front : card.back)"
+                >
+                  {{ showFront() ? card.front : card.back }}
+                </p>
               </div>
               <div class="card-face back">
-                <div class="tag">{{ showFront() ? 'Réponse attendue' : 'Question' }}</div>
-                <p class="word">{{ showFront() ? card.back : card.front }}</p>
+                <div class="tag">Réponse attendue</div>
+                <p
+                  class="word"
+                  [style.font-size]="fontSize(showFront() ? card.back : card.front)"
+                >
+                  {{ showFront() ? card.back : card.front }}
+                </p>
                 @if (cardRevealed()) {
                   <p class="hint">
                     {{ lastCorrect() ? 'Bonne réponse !' : 'Raté' }}
@@ -342,25 +472,36 @@
             </div>
           </div>
 
-          <form class="answer" (ngSubmit)="submitAnswer()" autocomplete="off">
-            <label>
-              Ta réponse
-              <input
-                name="answer"
-                type="text"
-                placeholder="Écris la traduction"
-                [disabled]="cardRevealed()"
-                [value]="answer()"
-                (input)="answer.set($any($event.target).value)"
-                required
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-              />
-            </label>
+          <form class="answer" (ngSubmit)="submitAnswer()" autocomplete="off" *ngIf="!testFinished()">
+            <div class="answer-header">
+              <div>
+                <p class="answer-title">Ta réponse</p>
+                <p class="answer-sub">Tape la traduction puis valide.</p>
+              </div>
+              <div class="chip" [class.success]="lastCorrect()" [class.error]="lastCorrect() === false">
+                @if (lastCorrect() === null) { En attente }
+                @else if (lastCorrect()) { Correct }
+                @else { Incorrect }
+              </div>
+            </div>
+
+            <input
+              class="answer-input"
+              name="answer"
+              type="text"
+              placeholder="Écris ta réponse"
+              [disabled]="cardRevealed()"
+              [value]="answer()"
+              (input)="answer.set($any($event.target).value)"
+              required
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+            />
+
             <div class="actions">
-              <button type="submit" [disabled]="cardRevealed()">Valider</button>
-              <button type="button" [disabled]="!cardRevealed()" (click)="nextCard()">
+              <button class="primary" type="submit" [disabled]="cardRevealed()">Valider</button>
+              <button class="secondary" type="button" [disabled]="!cardRevealed()" (click)="nextCard()">
                 Carte suivante
               </button>
             </div>
