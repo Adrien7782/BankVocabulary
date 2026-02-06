@@ -10,6 +10,7 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   query,
   orderBy,
@@ -22,6 +23,12 @@ type Flashcard = {
   front: string;
   back: string;
   flipped: boolean;
+  createdAt: number;
+};
+
+type Collection = {
+  id: string;
+  name: string;
   createdAt: number;
 };
 
@@ -46,9 +53,22 @@ export class App {
   private nextTestId = 1;
   private db: Firestore | null = null;
   private unsubscribeCards?: () => void;
+  private unsubscribeCollections?: () => void;
   private currentUserId: string | null = null;
+  private migratingRoot = false;
+  private skipAutoSelect = false;
 
+  readonly collections = signal<Collection[]>([]);
+  readonly selectedCollectionId = signal<string | null>(null);
+  readonly collectionSizes = signal<Record<string, number>>({});
   readonly flashcards = signal<Flashcard[]>([]);
+  readonly selectedCollection = computed(
+    () => this.collections().find((c) => c.id === this.selectedCollectionId()) ?? null
+  );
+  readonly collectionDeleteMode = signal(false);
+  readonly showAddCollectionModal = signal(false);
+  readonly showConfirmDeleteCollection = signal(false);
+  readonly collectionToDelete = signal<Collection | null>(null);
 
   readonly totalCards = computed(() => this.flashcards().length);
   readonly activeTab = signal<'home' | 'bank' | 'review'>('home');
@@ -56,6 +76,10 @@ export class App {
   // Revision state
   readonly testSize = signal(5);
   readonly reviewCards = signal<Flashcard[]>([]);
+  readonly selectedReviewCollections = signal<string[]>([]);
+  readonly selectedReviewTotal = computed(() =>
+    this.selectedReviewCollections().reduce((sum, id) => sum + (this.collectionSizes()[id] ?? 0), 0)
+  );
   readonly currentIndex = signal(0);
   readonly score = signal(0);
   readonly showFront = signal(true);
@@ -86,6 +110,9 @@ export class App {
     front: '',
     back: '',
   };
+  collectionForm = {
+    name: '',
+  };
 
   constructor() {
     this.loadHistory();
@@ -98,6 +125,18 @@ export class App {
     effect(() => {
       const user = this.auth.user();
       this.handleUserChange(user ?? null);
+    });
+
+    effect(() => {
+      const validIds = new Set(this.collections().map((c) => c.id));
+      this.selectedReviewCollections.update((ids) => ids.filter((id) => validIds.has(id)));
+    });
+
+    effect(() => {
+      const total = this.selectedReviewCollections().length > 0 ? this.selectedReviewTotal() : 0;
+      if (total > 0 && total !== this.testSize()) {
+        this.testSize.set(total);
+      }
     });
   }
 
@@ -157,10 +196,11 @@ export class App {
   addCard(): void {
     const front = this.form.front.trim();
     const back = this.form.back.trim();
-    if (!front || !back) return;
+    const colId = this.selectedCollectionId();
+    if (!front || !back || !colId) return;
     if (!this.db || !this.auth.user()) return;
 
-    addDoc(collection(this.db, 'users', this.auth.user()!.uid, 'cards'), {
+    addDoc(collection(this.db, 'users', this.auth.user()!.uid, 'collections', colId, 'cards'), {
       front,
       back,
       flipped: false,
@@ -179,9 +219,11 @@ export class App {
   toggleCard(id: string): void {
     if (this.deleteMode()) return;
     if (!this.db || !this.auth.user()) return;
+    const colId = this.selectedCollectionId();
+    if (!colId) return;
     const card = this.flashcards().find((c) => c.id === id);
     if (!card) return;
-    updateDoc(doc(this.db, 'users', this.auth.user()!.uid, 'cards', id), {
+    updateDoc(doc(this.db, 'users', this.auth.user()!.uid, 'collections', colId, 'cards', id), {
       flipped: !card.flipped,
     }).catch(() => {});
   }
@@ -192,15 +234,19 @@ export class App {
 
   deleteCard(id: string): void {
     if (!this.db || !this.auth.user()) return;
-    deleteDoc(doc(this.db, 'users', this.auth.user()!.uid, 'cards', id)).catch(() => {});
+    const colId = this.selectedCollectionId();
+    if (!colId) return;
+    deleteDoc(doc(this.db, 'users', this.auth.user()!.uid, 'collections', colId, 'cards', id)).catch(() => {});
   }
 
   flipAllCards(): void {
     if (!this.db || !this.auth.user()) return;
     const target = !this.flashcards().every((c) => c.flipped);
     const uid = this.auth.user()!.uid;
+    const colId = this.selectedCollectionId();
+    if (!colId) return;
     const updates = this.flashcards().map((c) =>
-      updateDoc(doc(this.db!, 'users', uid, 'cards', c.id), { flipped: target }).catch(() => {})
+      updateDoc(doc(this.db!, 'users', uid, 'collections', colId, 'cards', c.id), { flipped: target }).catch(() => {})
     );
     Promise.all(updates).catch(() => {});
   }
@@ -273,12 +319,132 @@ export class App {
     }
     if (tab !== 'bank') {
       this.deleteMode.set(false);
+      this.collectionDeleteMode.set(false);
     }
   }
 
-  startTest(fromCards?: Flashcard[]): void {
+  selectCollection(id: string): void {
+    if (!this.db || !this.auth.user()) return;
+    if (this.selectedCollectionId() === id) return;
+    if (this.collectionDeleteMode()) {
+      this.collectionDeleteMode.set(false);
+    }
+    this.selectedCollectionId.set(id);
+    this.unsubscribeCards?.();
+    const q = query(
+      collection(this.db, 'users', this.auth.user()!.uid, 'collections', id, 'cards'),
+      orderBy('createdAt', 'desc')
+    );
+    this.unsubscribeCards = onSnapshot(q, (snap) => {
+      const cards: Flashcard[] = snap.docs.map((d) => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          front: data.front,
+          back: data.back,
+          flipped: !!data.flipped,
+          createdAt: data.createdAt ?? Date.now(),
+        };
+      });
+      this.flashcards.set(cards);
+    });
+  }
+
+  async addCollection(): Promise<void> {
+    const name = this.collectionForm.name.trim();
+    if (!name || !this.db || !this.auth.user()) return;
+    try {
+      const ref = await addDoc(collection(this.db, 'users', this.auth.user()!.uid, 'collections'), {
+        name,
+        createdAt: Date.now(),
+      });
+      this.collectionForm.name = '';
+      this.showAddCollectionModal.set(false);
+      this.selectCollection(ref.id);
+    } catch (e: any) {
+      this.authError.set(e?.message ?? 'Erreur création collection');
+    }
+  }
+
+  openAddCollection(): void {
+    this.collectionForm.name = '';
+    this.showAddCollectionModal.set(true);
+  }
+
+  cancelAddCollection(): void {
+    this.showAddCollectionModal.set(false);
+  }
+
+  toggleCollectionDeleteMode(): void {
+    this.collectionDeleteMode.update((v) => !v);
+    if (!this.collectionDeleteMode()) {
+      this.collectionToDelete.set(null);
+      this.showConfirmDeleteCollection.set(false);
+    }
+  }
+
+  requestDeleteCollection(col: Collection, event?: Event): void {
+    event?.stopPropagation();
+    this.collectionToDelete.set(col);
+    this.showConfirmDeleteCollection.set(true);
+  }
+
+  cancelDeleteCollection(): void {
+    this.collectionToDelete.set(null);
+    this.showConfirmDeleteCollection.set(false);
+  }
+
+  async deleteCollectionConfirmed(): Promise<void> {
+    const col = this.collectionToDelete();
+    if (!col || !this.db || !this.auth.user()) return;
+    try {
+      const uid = this.auth.user()!.uid;
+      const cardsSnap = await getDocs(collection(this.db, 'users', uid, 'collections', col.id, 'cards'));
+      await Promise.all(cardsSnap.docs.map((d) => deleteDoc(d.ref)));
+      await deleteDoc(doc(this.db, 'users', uid, 'collections', col.id));
+      if (this.selectedCollectionId() === col.id) {
+        this.skipAutoSelect = true;
+        this.selectedCollectionId.set(null);
+        this.flashcards.set([]);
+      }
+    } catch (e: any) {
+      this.authError.set(e?.message ?? 'Suppression collection impossible');
+    }
+    this.showConfirmDeleteCollection.set(false);
+    this.collectionToDelete.set(null);
+    this.collectionDeleteMode.set(false);
+  }
+
+  async startTest(fromCards?: Flashcard[]): Promise<void> {
     this.selectedHistory.set(null);
-    const source = fromCards ? [...fromCards] : [...this.flashcards()];
+    let source: Flashcard[] = [];
+    if (fromCards) {
+      source = [...fromCards];
+    } else {
+      const ids =
+        this.selectedReviewCollections().length > 0
+          ? this.selectedReviewCollections()
+          : this.collections().map((c) => c.id);
+
+      if (this.db && this.auth.user()) {
+        const uid = this.auth.user()!.uid;
+        for (const colId of ids) {
+          const snap = await getDocs(collection(this.db, 'users', uid, 'collections', colId, 'cards'));
+          snap.docs.forEach((d) => {
+            const data = d.data() as any;
+            source.push({
+              id: d.id,
+              front: data.front,
+              back: data.back,
+              flipped: !!data.flipped,
+              createdAt: data.createdAt ?? Date.now(),
+            });
+          });
+        }
+      } else {
+        source = [...this.flashcards()];
+      }
+    }
     // dédoublonne par contenu (recto/verso) pour éviter de revoir la même Q/R
     const normalize = (t: string) => (t ?? '').trim().toLowerCase();
     const uniquePool = Array.from(
@@ -362,6 +528,20 @@ export class App {
     this.openHistoryId.set(id);
   }
 
+  toggleReviewCollection(id: string): void {
+    this.selectedReviewCollections.update((arr) =>
+      arr.includes(id) ? arr.filter((c) => c !== id) : [...arr, id]
+    );
+  }
+
+  selectAllReviewCollections(): void {
+    this.selectedReviewCollections.set(this.collections().map((c) => c.id));
+  }
+
+  clearReviewCollections(): void {
+    this.selectedReviewCollections.set([]);
+  }
+
   openHistoryTest(test: TestResult): void {
     this.activeTab.set('review');
     this.selectedHistory.set(test);
@@ -418,6 +598,9 @@ export class App {
       answers: savedAnswers,
     };
     this.history.update((items) => [result, ...items].slice(0, 12));
+    this.selectedHistory.set(result);
+    this.reviewCards.set(savedCards);
+    this.openHistoryId.set(String(result.id));
   }
 
   private prepareCard(forceQuestionSide = false): void {
@@ -445,8 +628,10 @@ export class App {
 
   private handleUserChange(user: any): void {
     this.unsubscribeCards?.();
+    this.unsubscribeCollections?.();
     if (!user) {
       this.flashcards.set([]);
+      this.collections.set([]);
       this.db = null;
       this.historyKey.set(`${this.historyKeyBase}/anon`);
       this.history.set([]);
@@ -455,6 +640,7 @@ export class App {
       this.testFinished.set(false);
       this.currentIndex.set(0);
       this.currentUserId = null;
+      this.selectedCollectionId.set(null);
       return;
     }
 
@@ -478,19 +664,94 @@ export class App {
       }
     }
 
-    const q = query(collection(this.db, 'users', user.uid, 'cards'), orderBy('createdAt', 'desc'));
-    this.unsubscribeCards = onSnapshot(q, (snap) => {
-      const cards: Flashcard[] = snap.docs.map((d) => {
+    const colQuery = query(
+      collection(this.db, 'users', user.uid, 'collections'),
+      orderBy('createdAt', 'desc')
+    );
+    this.unsubscribeCollections = onSnapshot(colQuery, (snap) => {
+      const cols: Collection[] = snap.docs.map((d) => {
         const data = d.data() as any;
         return {
           id: d.id,
-          front: data.front,
-          back: data.back,
-          flipped: !!data.flipped,
+          name: data.name ?? 'Collection',
           createdAt: data.createdAt ?? Date.now(),
         };
       });
-      this.flashcards.set(cards);
+      this.collections.set(cols);
+      if (this.skipAutoSelect && !this.selectedCollectionId()) {
+        this.skipAutoSelect = false;
+      }
+      if (!this.selectedCollectionId() && cols.length > 0) {
+        if (!this.skipAutoSelect) {
+          this.selectCollection(cols[0].id);
+        } else {
+          // remain on collections list
+          this.unsubscribeCards?.();
+          this.flashcards.set([]);
+        }
+      } else if (cols.length === 0) {
+        this.selectedCollectionId.set(null);
+        this.flashcards.set([]);
+        this.unsubscribeCards?.();
+        this.skipAutoSelect = false;
+      }
+      if (!this.migratingRoot) {
+        this.migrateRootCards(user.uid, cols);
+      }
+      this.refreshCollectionSizes(user.uid, cols);
     });
+  }
+
+  private async refreshCollectionSizes(uid: string, cols: Collection[]): Promise<void> {
+    if (!this.db) return;
+    const sizes: Record<string, number> = {};
+    await Promise.all(
+      cols.map(async (col) => {
+        const snap = await getDocs(collection(this.db!, 'users', uid, 'collections', col.id, 'cards'));
+        sizes[col.id] = snap.size;
+      })
+    );
+    this.collectionSizes.set(sizes);
+  }
+
+  private async migrateRootCards(uid: string, existingCols: Collection[]): Promise<void> {
+    if (!this.db) return;
+    this.migratingRoot = true;
+    try {
+      const rootCardsSnap = await getDocs(collection(this.db, 'users', uid, 'cards'));
+      if (rootCardsSnap.empty) {
+        this.migratingRoot = false;
+        return;
+      }
+      let defaultCol =
+        existingCols.find((c) => c.name.toLowerCase() === 'général' || c.name.toLowerCase() === 'general') ||
+        null;
+      if (!defaultCol) {
+        const ref = await addDoc(collection(this.db, 'users', uid, 'collections'), {
+          name: 'Général',
+          createdAt: Date.now(),
+        });
+        defaultCol = { id: ref.id, name: 'Général', createdAt: Date.now() };
+        this.collections.update((cols) => [defaultCol!, ...cols]);
+      }
+      const targetPath = collection(this.db, 'users', uid, 'collections', defaultCol.id, 'cards');
+      const migrateOps = rootCardsSnap.docs.map(async (d) => {
+        const data: any = d.data();
+        await addDoc(targetPath, {
+          ...data,
+          createdAt: data['createdAt'] ?? Date.now(),
+          flipped: data['flipped'] ?? false,
+        });
+        await deleteDoc(d.ref);
+      });
+      await Promise.all(migrateOps);
+      if (!this.selectedCollectionId()) {
+        this.selectCollection(defaultCol.id);
+      }
+    } catch (e: any) {
+      this.authError.set(e?.message ?? 'Migration des anciennes cartes impossible');
+    } finally {
+      this.migratingRoot = false;
+    }
   }
 }

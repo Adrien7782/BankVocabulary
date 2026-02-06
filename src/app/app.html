@@ -39,7 +39,42 @@
       @if (authError()) {
         <p class="auth-error">{{ authError() }}</p>
       }
+</div>
+
+@if (showAddCollectionModal()) {
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h3>Nouvelle collection</h3>
+      <form class="collection-form" autocomplete="off">
+        <input
+          type="text"
+          name="collection"
+          placeholder="Nom de la collection"
+          [(ngModel)]="collectionForm.name"
+          required
+          autocomplete="off"
+        />
+        <div class="modal-actions">
+          <button class="primary" type="button" (click)="addCollection()">Valider</button>
+          <button class="danger" type="button" (click)="cancelAddCollection()">Annuler</button>
+        </div>
+      </form>
     </div>
+  </div>
+}
+
+@if (showConfirmDeleteCollection() && collectionToDelete(); as targetCol) {
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h3>Supprimer la collection ?</h3>
+      <p>Vous êtes sûr de vouloir supprimer la collection : <strong>{{ targetCol.name }}</strong> ?</p>
+      <div class="modal-actions">
+        <button class="primary" type="button" (click)="deleteCollectionConfirmed()">Valider</button>
+        <button class="danger" type="button" (click)="cancelDeleteCollection()">Annuler</button>
+      </div>
+    </div>
+  </div>
+}
 
     @if (auth.user() && !auth.user()?.emailVerified && environment.requireEmailVerification) {
       <div class="verify-card below-auth">
@@ -201,117 +236,184 @@
       </ng-container>
 
       <ng-container *ngSwitchCase="'bank'">
-        <header class="hero">
-          <div class="headline">
-            <p class="eyebrow">Banque de cartes</p>
-            <h1>Flashcards</h1>
-            <p class="lede">Ajoute des mots, évènements, question... , clique sur une carte pour révéler la réponse.</p>
-            <div class="stats">
-              <span class="dot"></span>
-              <span>{{ totalCards() }} carte{{ totalCards() > 1 ? 's' : '' }}</span>
+        @if (!selectedCollectionId()) {
+          <section class="collection-section">
+            <div class="headline">
+              <p class="eyebrow">Banque de cartes</p>
+              <h1>Collections</h1>
+              <p class="lede">
+                Crée des collections pour catégoriser tes cartes.
+              </p>
+              <div class="stats">
+                <span class="dot"></span>
+                <span>{{ totalCards() }} carte{{ totalCards() > 1 ? 's' : '' }}</span>
+              </div>
+              <div class="actions-bar">
+                <button class="primary" type="button" (click)="openAddCollection()">Ajouter</button>
+                <button
+                  class="delete-toggle"
+                  type="button"
+                  [class.active]="collectionDeleteMode()"
+                  (click)="toggleCollectionDeleteMode()"
+                >
+                  {{ collectionDeleteMode() ? 'Terminer suppression' : 'Supprimer collections' }}
+                </button>
+              </div>
             </div>
-            <div class="actions-bar">
-              <button
-                type="button"
-                class="shuffle-btn"
-                (click)="shuffleCards()"
-                [disabled]="flashcards().length === 0"
-              >
-                Mélanger
-              </button>
-              <button
-                type="button"
-                class="shuffle-btn"
-                (click)="flipAllCards()"
-                [disabled]="flashcards().length === 0"
-              >
-                Tout retourner
-              </button>
-              <button
-                type="button"
-                class="delete-toggle"
-                [class.active]="deleteMode()"
-                (click)="toggleDeleteMode()"
-              >
-                {{ deleteMode() ? 'Terminer suppression' : 'Supprimer cartes' }}
-              </button>
-            </div>
-          </div>
-
-          <form class="new-card" (ngSubmit)="addCard()" #cardForm="ngForm" autocomplete="off">
-            <label>
-              recto
-              <input
-                name="front"
-                type="text"
-                [(ngModel)]="form.front"
-                required
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-              />
-            </label>
-            <label>
-              verso
-              <input
-                name="back"
-                type="text"
-                [(ngModel)]="form.back"
-                required
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-              />
-            </label>
-            <button type="submit" [disabled]="cardForm.form.invalid">Ajouter à la banque</button>
-          </form>
-        </header>
-
-        <section
-          class="grid"
-          aria-label="Liste des flashcards"
-          [class.delete-mode]="deleteMode()"
-          [class.shuffling]="shuffleWave()"
-        >
-          @if (flashcards().length === 0) {
-            <p class="empty">Ajoute ton premier mot pour créer ta collection.</p>
-          } @else {
-            @for (card of flashcards(); track card.id) {
-              <article
-                class="card"
-                #cardEl
-                [class.new-card]="card.id === lastAddedId()"
-                (click)="toggleCard(card.id)"
-                [class.flipped]="card.flipped"
-                role="button"
-                [attr.aria-pressed]="card.flipped"
-                tabindex="0"
-                (keyup.enter)="toggleCard(card.id)"
-              >
-                @if (deleteMode()) {
-                  <button
-                    class="delete-badge"
-                    type="button"
-                    (click)="deleteCard(card.id); $event.stopPropagation()"
-                    aria-label="Supprimer cette carte"
+            <div class="collection-grid">
+              @if (collections().length === 0) {
+                <p class="empty">Aucune collection. Crée ta première pour organiser tes cartes.</p>
+              } @else {
+                @for (col of collections(); track col.id) {
+                  <article
+                    class="collection-card"
+                    [class.active]="col.id === selectedCollectionId()"
+                    [class.delete-mode]="collectionDeleteMode()"
+                    (click)="selectCollection(col.id)"
+                    tabindex="0"
+                    (keyup.enter)="selectCollection(col.id)"
                   >
-                    &times;
-                  </button>
+                    @if (collectionDeleteMode()) {
+                      <button
+                        class="delete-badge"
+                        type="button"
+                        (click)="requestDeleteCollection(col, $event)"
+                        aria-label="Supprimer la collection"
+                      >
+                        &times;
+                      </button>
+                    }
+                    <p class="collection-name">{{ col.name }}</p>
+                    <p class="collection-date muted">{{ collectionSizes()[col.id] ?? 0 }} cartes</p>
+                    <p class="collection-date muted">{{ col.createdAt | date:'shortDate' }}</p>
+                  </article>
                 }
-                <div class="card-inner">
-                 <div class="card-face front">
-                    <div class="tag">Recto</div>
-                    <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
+              }
+            </div>
+          </section>
+        }
+
+        @if (selectedCollectionId()) {
+          <header class="hero">
+            <div class="headline">
+              <button class="secondary back-btn" type="button" (click)="selectedCollectionId.set(null)">
+                ← Retour aux collections
+              </button>
+              <p class="eyebrow">Banque de cartes</p>
+              <h1>{{ selectedCollection()?.name }}</h1>
+              <p class="lede">
+                Ajoute des mots, évènements, question... 
+              </p>
+              <p>clique sur une carte pour révéler la réponse.</p>
+              <div class="stats">
+                <span class="dot"></span>
+                <span>{{ totalCards() }} carte{{ totalCards() > 1 ? 's' : '' }}</span>
+              </div>
+              <div class="actions-bar">
+                <button
+                  type="button"
+                  class="shuffle-btn"
+                  (click)="shuffleCards()"
+                  [disabled]="flashcards().length === 0"
+                >
+                  Mélanger
+                </button>
+                <button
+                  type="button"
+                  class="shuffle-btn"
+                  (click)="flipAllCards()"
+                  [disabled]="flashcards().length === 0"
+                >
+                  Tout retourner
+                </button>
+                <button
+                  type="button"
+                  class="delete-toggle"
+                  [class.active]="deleteMode()"
+                  (click)="toggleDeleteMode()"
+                >
+                  {{ deleteMode() ? 'Terminer suppression' : 'Supprimer cartes' }}
+                </button>
+              </div>
+            </div>
+
+            <form class="new-card" (ngSubmit)="addCard()" #cardForm="ngForm" autocomplete="off">
+              <label>
+                recto
+                <input
+                  name="front"
+                  type="text"
+                  [(ngModel)]="form.front"
+                  required
+                  autocomplete="off"
+                  autocapitalize="none"
+                  spellcheck="false"
+                />
+              </label>
+              <label>
+                verso
+                <input
+                  name="back"
+                  type="text"
+                  [(ngModel)]="form.back"
+                  required
+                  autocomplete="off"
+                  autocapitalize="none"
+                  spellcheck="false"
+                />
+              </label>
+              <button type="submit" [disabled]="cardForm.form.invalid">
+                Ajouter à la banque
+              </button>
+            </form>
+          </header>
+
+          <section
+            class="grid"
+            aria-label="Liste des flashcards"
+            [class.delete-mode]="deleteMode()"
+            [class.shuffling]="shuffleWave()"
+          >
+            @if (flashcards().length === 0) {
+              <p class="empty">Ajoute ta première carte dans cette collection.</p>
+            } @else {
+              @for (card of flashcards(); track card.id) {
+                <article
+                  class="card"
+                  #cardEl
+                  [class.new-card]="card.id === lastAddedId()"
+                  (click)="toggleCard(card.id)"
+                  [class.flipped]="card.flipped"
+                  role="button"
+                  [attr.aria-pressed]="card.flipped"
+                  tabindex="0"
+                  (keyup.enter)="toggleCard(card.id)"
+                >
+                  @if (deleteMode()) {
+                    <button
+                      class="delete-badge"
+                      type="button"
+                      (click)="deleteCard(card.id); $event.stopPropagation()"
+                      aria-label="Supprimer cette carte"
+                    >
+                      &times;
+                    </button>
+                  }
+                  <div class="card-inner">
+                   <div class="card-face front">
+                      <div class="tag">Recto</div>
+                      <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
+                    </div>
+                    <div class="card-face back">
+                      <div class="tag">Verso</div>
+                      <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
+                    </div>
                   </div>
-                  <div class="card-face back">
-                    <div class="tag">Verso</div>
-                    <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
-                  </div>
-                </div>
-              </article>
+                </article>
+              }
             }
-          }
-        </section>
+          </section>
+        }
       </ng-container>
 
       <ng-container *ngSwitchCase="'review'">
@@ -320,34 +422,74 @@
             <p class="eyebrow">Session de révision</p>
             <h1>Teste-toi</h1>
             <p class="lede">Choisis le nombre de cartes, réponds, puis valide pour voir la solution.</p>
-            <div class="stats">
-              <span class="dot"></span>
-              <span>Score : {{ score() }} / {{ reviewCards().length || testSize() }}</span>
-            </div>
+            @if (reviewCards().length > 0 || testFinished()) {
+              <div class="stats">
+                <span class="dot"></span>
+                <span>Score : {{ score() }} / {{ reviewCards().length || testSize() }}</span>
+              </div>
+            }
           </div>
 
-          <form class="new-card" (ngSubmit)="startTest()" autocomplete="off">
-            <label>
-              Nombre de cartes
-              <input
-                name="size"
-                type="number"
-                min="1"
-                [max]="totalCards() || 1"
-                [ngModel]="testSize()"
-                (ngModelChange)="testSize.set(+($event || 0))"
-                placeholder="5"
-                required
-                autocomplete="off"
-                inputmode="numeric"
-              />
-            </label>
-            <button type="submit">Nouveau test</button>
-          </form>
         </section>
 
+        @if (testFinished() || reviewCards().length === 0) {
+          <section class="review-controls">
+            <form class="review-form" (ngSubmit)="startTest()" autocomplete="off">
+              <div class="form-row">
+                <label class="field">
+                  <span class="label">Nombre de cartes</span>
+                  <input
+                    name="size"
+                    type="number"
+                    min="1"
+                    [max]="totalCards() || 1"
+                    [ngModel]="testSize()"
+                    (ngModelChange)="testSize.set(+($event || 0))"
+                    placeholder="5"
+                    required
+                    autocomplete="off"
+                    inputmode="numeric"
+                  />
+                </label>
+                <div class="picker-actions">
+                  <span class="muted small">Sélection rapide</span>
+                  <div class="pill-actions">
+                    <button type="button" class="primary pill" (click)="selectAllReviewCollections()">Toutes</button>
+                    <button type="button" class="primary pill ghost" (click)="clearReviewCollections()">Aucune</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="collection-picker">
+                <p class="muted small">Choisis les collections pour ce test :</p>
+                <div class="collection-list">
+                  @for (col of collections(); track col.id) {
+                    <div
+                      class="collection-option"
+                      [class.selected]="selectedReviewCollections().includes(col.id)"
+                      (click)="toggleReviewCollection(col.id)"
+                      role="button"
+                      tabindex="0"
+                      (keyup.enter)="toggleReviewCollection(col.id)"
+                    >
+                      <span class="name">{{ col.name }}</span>
+                      <span class="collection-date muted">{{ collectionSizes()[col.id] ?? 0 }} cartes</span>
+                    </div>
+                  } @empty {
+                    <p class="empty">Crée d'abord une collection dans l'onglet Banque.</p>
+                  }
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button class="primary" type="submit">Lancer le test</button>
+              </div>
+            </form>
+          </section>
+        }
+
         @if (reviewCards().length === 0 && !testFinished()) {
-          <p class="empty">Lance un test pour t'entraîner.</p>
+          <!-- <p class="empty">Lance un test pour t'entraîner.</p> -->
           <div class="section-title">
             <h2>Derniers Tests</h2>
             <button class="danger-btn" type="button" (click)="clearHistory()">Supprimer historique</button>
@@ -423,7 +565,7 @@
                 }
               </article>
             } @empty {
-              <p class="empty">Pas encore de tests. Lance une session dans l’onglet Révision.</p>
+              <p class="empty">Aucun test sauvegardé</p>
             }
           </div>
         }
@@ -530,7 +672,7 @@
         }
 
         @if (selectedHistory(); as recap) {
-          <div class="result">
+          <!-- <div class="result">
             <p>Récap test #{{ recap.id }} — {{ recap.score }} / {{ recap.size }}</p>
             <p>Score : {{ recap.score }} / {{ recap.size }}</p>
             <button class="nav-btn" (click)="startTest(recap.cards)">Relancer ce test</button>
@@ -559,6 +701,56 @@
                 </article>
               }
             </div>
+          </div> -->
+        }
+
+        @if ((testFinished() || selectedHistory()) && history().length > 0) {
+          <div class="section-title">
+            <h2>Derniers Tests</h2>
+            <button class="danger-btn" type="button" (click)="clearHistory()">Supprimer historique</button>
+          </div>
+          <div class="history-stack">
+            @for (test of history().slice(0,12); track test.id) {
+              <article
+                class="history-wide"
+                (click)="toggleHistoryView(test)"
+                tabindex="0"
+                (keyup.enter)="toggleHistoryView(test)"
+                [ngClass]="{ correct: test.score === test.size, wrong: test.score !== test.size }"
+              >
+                <div class="history-wide__header">
+                  <span class="pill small">Test #{{ test.id }}</span>
+                  <span class="muted">{{ test.createdAt | date:'short' }}</span>
+                </div>
+                <div class="history-wide__body">
+                  <div class="history-wide__score">
+                    <p class="word">Score : {{ test.score }} / {{ test.size }}</p>
+                  </div>
+                  <div class="history-wide__cta">
+                    Voir le récap complet
+                    <span class="chevron">{{ openHistoryId() === test.id.toString() ? '▴' : '▾' }}</span>
+                  </div>
+                </div>
+                @if (openHistoryId() === test.id.toString()) {
+                  <div class="grid recap-grid">
+                    @for (card of test.cards; track card.id) {
+                      <article class="card recap">
+                        <div class="card-inner">
+                          <div class="card-face front">
+                            <div class="tag">Question</div>
+                            <p class="word" [style.font-size]="fontSize(card.front)">{{ card.front }}</p>
+                          </div>
+                          <div class="card-face back">
+                            <div class="tag">Réponse</div>
+                            <p class="word" [style.font-size]="fontSize(card.back)">{{ card.back }}</p>
+                          </div>
+                        </div>
+                      </article>
+                    }
+                  </div>
+                }
+              </article>
+            }
           </div>
         }
 
@@ -630,4 +822,39 @@
     </ng-container>
   </section>
 </div>
+}
+
+@if (showAddCollectionModal()) {
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h3>Nouvelle collection</h3>
+      <form (ngSubmit)="addCollection()" class="collection-form" autocomplete="off">
+        <input
+          type="text"
+          name="collection"
+          placeholder="Nom de la collection"
+          [(ngModel)]="collectionForm.name"
+          required
+          autocomplete="off"
+        />
+        <div class="modal-actions">
+          <button class="primary" type="submit">Valider</button>
+          <button class="danger" type="button" (click)="cancelAddCollection()">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showConfirmDeleteCollection() && collectionToDelete(); as targetCol) {
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h3>Supprimer la collection ?</h3>
+      <p>Vous êtes sûr de vouloir supprimer la collection et toutes ses cartes : <strong>{{ targetCol.name }}</strong> ?</p>
+      <div class="modal-actions">
+        <button class="primary" type="button" (click)="deleteCollectionConfirmed()">Valider</button>
+        <button class="danger" type="button" (click)="cancelDeleteCollection()">Annuler</button>
+      </div>
+    </div>
+  </div>
 }
